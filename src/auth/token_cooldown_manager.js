@@ -257,6 +257,15 @@ class TokenCooldownManager {
 
     return result;
   }
+
+  /**
+   * 清空所有冷却状态
+   */
+  resetAll() {
+    this.cooldowns.clear();
+    this.saveToFile();
+    log.warn('[CooldownManager] 已清空所有冷却状态');
+  }
 }
 
 const tokenCooldownManager = new TokenCooldownManager();

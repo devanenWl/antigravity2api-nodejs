@@ -74,6 +74,75 @@ class QuotaManager {
   }
 
   /**
+   * 获取未过期的额度缓存
+   * @param {string} tokenId - Token ID
+   * @returns {Object|null}
+   */
+  getFreshQuotaData(tokenId) {
+    const data = this.cache.get(tokenId);
+    if (!data) return null;
+    if (Date.now() - data.lastUpdated > this.CACHE_TTL) {
+      return null;
+    }
+    return data;
+  }
+
+  /**
+   * 获取模型组额度快照
+   * @param {string} tokenId - Token ID
+   * @param {string} modelId - 模型 ID
+   * @returns {{hasData: boolean, groupKey: string, minRemaining: number|null, requestCount: number, resetTime: number|null, resetPassed: boolean}}
+   */
+  getModelGroupSnapshot(tokenId, modelId) {
+    const data = this.getFreshQuotaData(tokenId);
+    const groupKey = getGroupKey(modelId);
+
+    if (!data || !data.models) {
+      return {
+        hasData: false,
+        groupKey,
+        minRemaining: null,
+        requestCount: 0,
+        resetTime: null,
+        resetPassed: false
+      };
+    }
+
+    let minRemaining = null;
+    let earliestReset = null;
+    let found = false;
+
+    for (const [id, quotaData] of Object.entries(data.models)) {
+      if (getGroupKey(id) !== groupKey) continue;
+      found = true;
+
+      const remaining = quotaData.r || 0;
+      if (minRemaining === null || remaining < minRemaining) {
+        minRemaining = remaining;
+      }
+
+      if (quotaData.t) {
+        const resetMs = Date.parse(quotaData.t);
+        if (Number.isFinite(resetMs) && (earliestReset === null || resetMs < earliestReset)) {
+          earliestReset = resetMs;
+        }
+      }
+    }
+
+    const requestCount = data.requestCounts?.[groupKey] || 0;
+    const resetPassed = Number.isFinite(earliestReset) && Date.now() > earliestReset;
+
+    return {
+      hasData: found,
+      groupKey,
+      minRemaining,
+      requestCount,
+      resetTime: earliestReset,
+      resetPassed
+    };
+  }
+
+  /**
    * 更新额度数据
    * @param {string} refreshToken - Token ID
    * @param {Object} quotas - 额度数据
@@ -208,15 +277,7 @@ class QuotaManager {
    * @returns {Object|null} 额度数据
    */
   getQuota(refreshToken) {
-    const data = this.cache.get(refreshToken);
-    if (!data) return null;
-
-    // 检查缓存是否过期
-    if (Date.now() - data.lastUpdated > this.CACHE_TTL) {
-      return null;
-    }
-
-    return data;
+    return this.getFreshQuotaData(refreshToken);
   }
 
   /**
@@ -236,32 +297,19 @@ class QuotaManager {
    * @returns {boolean} 是否有额度（true = 有额度或无数据，false = 额度为 0）
    */
   hasQuotaForModel(tokenId, modelId) {
-    const data = this.cache.get(tokenId);
-    if (!data || !data.models) {
-      // 没有额度数据，假设有额度
-      return true;
-    }
+    const snapshot = this.getModelGroupSnapshot(tokenId, modelId);
 
-    const groupKey = getGroupKey(modelId);
+    // 没有新鲜额度数据时不阻塞请求，由调用方决定是否主动刷新
+    if (!snapshot.hasData) return true;
 
-    // 使用该组的最小额度来判断（与 getModelGroupQuota 逻辑一致）
-    let minRemaining = null;
+    // 恢复时间已过但额度缓存未刷新时，放行以触发新一轮额度拉取
+    if (snapshot.resetPassed) return true;
 
-    for (const [id, quotaData] of Object.entries(data.models)) {
-      const idGroupKey = getGroupKey(id);
-      if (idGroupKey === groupKey) {
-        const remaining = quotaData.r || 0;
-        if (minRemaining === null || remaining < minRemaining) {
-          minRemaining = remaining;
-        }
-      }
-    }
-
-    // 没有找到该组的模型数据，假设有额度
-    if (minRemaining === null) return true;
-
-    // 该组最小额度为 0，说明额度耗尽
-    return minRemaining > 0;
+    return this.calculateEstimatedRequests(
+      snapshot.minRemaining || 0,
+      snapshot.requestCount,
+      snapshot.groupKey
+    ) > 0;
   }
 
   /**
@@ -271,27 +319,11 @@ class QuotaManager {
    * @returns {number} 该组的最小额度 (0-1)，如果没有数据返回 1
    */
   getModelGroupQuota(tokenId, modelId) {
-    const data = this.cache.get(tokenId);
-    if (!data || !data.models) {
-      return 1; // 没有数据，假设满额
+    const snapshot = this.getModelGroupSnapshot(tokenId, modelId);
+    if (!snapshot.hasData || snapshot.resetPassed || snapshot.minRemaining === null) {
+      return 1;
     }
-
-    const groupKey = getGroupKey(modelId);
-    let minRemaining = 1;
-    let found = false;
-
-    for (const [id, quotaData] of Object.entries(data.models)) {
-      const idGroupKey = getGroupKey(id);
-      if (idGroupKey === groupKey) {
-        found = true;
-        const remaining = quotaData.r || 0;
-        if (remaining < minRemaining) {
-          minRemaining = remaining;
-        }
-      }
-    }
-
-    return found ? minRemaining : 1;
+    return snapshot.minRemaining;
   }
 
   /**
@@ -301,32 +333,11 @@ class QuotaManager {
    * @returns {{resetTime: number|null, hasData: boolean}} resetTime 为时间戳（毫秒），hasData 表示是否有该系列的数据
    */
   getModelGroupResetTime(tokenId, modelId) {
-    const data = this.cache.get(tokenId);
-    if (!data || !data.models) {
-      return { resetTime: null, hasData: false };
+    const snapshot = this.getModelGroupSnapshot(tokenId, modelId);
+    if (!snapshot.hasData || snapshot.resetPassed) {
+      return { resetTime: null, hasData: snapshot.hasData };
     }
-
-    const groupKey = getGroupKey(modelId);
-    let earliestReset = null;
-    let found = false;
-
-    for (const [id, quotaData] of Object.entries(data.models)) {
-      const idGroupKey = getGroupKey(id);
-      if (idGroupKey === groupKey) {
-        found = true;
-        const resetTimeRaw = quotaData.t;
-        if (resetTimeRaw) {
-          const resetMs = Date.parse(resetTimeRaw);
-          if (Number.isFinite(resetMs)) {
-            if (earliestReset === null || resetMs < earliestReset) {
-              earliestReset = resetMs;
-            }
-          }
-        }
-      }
-    }
-
-    return { resetTime: earliestReset, hasData: found };
+    return { resetTime: snapshot.resetTime, hasData: true };
   }
 
   /**
@@ -335,8 +346,17 @@ class QuotaManager {
    * @returns {boolean} 是否有数据
    */
   hasQuotaData(tokenId) {
-    const data = this.cache.get(tokenId);
+    const data = this.getFreshQuotaData(tokenId);
     return !!(data && data.models && Object.keys(data.models).length > 0);
+  }
+
+  /**
+   * 清空所有额度缓存
+   */
+  resetAllQuotas() {
+    this.cache.clear();
+    this.saveToFile();
+    log.warn('[QuotaManager] 已清空所有额度缓存');
   }
 
   /**
@@ -416,4 +436,3 @@ class QuotaManager {
 
 const quotaManager = new QuotaManager();
 export default quotaManager;
-

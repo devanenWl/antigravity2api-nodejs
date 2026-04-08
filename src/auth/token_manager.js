@@ -9,8 +9,6 @@ import ProjectIdFetcher from './project_id_fetcher.js';
 import TokenValidator from './token_validator.js';
 import { StrategyFactory, RotationStrategy } from './token_rotation_strategy.js';
 import { TokenError } from '../utils/errors.js';
-import quotaManager from './quota_manager.js';
-import tokenCooldownManager from './token_cooldown_manager.js';
 import { randomUUID } from 'crypto';
 
 /**
@@ -184,28 +182,8 @@ class TokenManager {
       availableTokens = await this.validator.filterAvailableTokens(availableTokens, modelId);
 
       if (availableTokens.length === 0) {
-        // 检查是否所有 token 对该模型都不可用
-        const allTokens = this.pool.getEnabledIds().map(tokenId => ({
-          tokenId,
-          token: this.pool.get(tokenId)
-        }));
-
-        const allExhausted = await this.validator.areAllTokensExhausted(allTokens, modelId);
-        if (allExhausted) {
-          log.warn(`所有token对模型 ${modelId} 都不可用，重置额度状态`);
-          this.pool.resetAllQuotas();
-          quotaManager.resetAllQuotas();
-          tokenCooldownManager.resetAll();
-
-          // 重新获取可用 tokens
-          availableTokens = this.pool.getEnabledIds().map(tokenId => ({
-            tokenId,
-            token: this.pool.get(tokenId)
-          }));
-        } else {
-          log.error(`没有对模型 ${modelId} 可用的token`);
-          return null;
-        }
+        log.warn(`所有启用 token 对模型 ${modelId} 当前都不可用`);
+        return null;
       }
     }
 
@@ -266,28 +244,8 @@ class TokenManager {
       availableTokens = await this.validator.filterAvailableTokens(availableTokens, modelId);
 
       if (availableTokens.length === 0) {
-        // 检查是否所有 token 对该模型都不可用
-        const allTokens = this.pool.getEnabledIds().map(tokenId => ({
-          tokenId,
-          token: this.pool.get(tokenId)
-        }));
-
-        const allExhausted = await this.validator.areAllTokensExhausted(allTokens, modelId);
-        if (allExhausted) {
-          log.warn(`所有token对模型 ${modelId} 都不可用，重置额度状态`);
-          this.pool.resetAllQuotas();
-          quotaManager.resetAllQuotas();
-          tokenCooldownManager.resetAll();
-
-          // 重新获取可用 tokens
-          availableTokens = this.pool.getEnabledIds().map(tokenId => ({
-            tokenId,
-            token: this.pool.get(tokenId)
-          }));
-        } else {
-          log.error(`没有对模型 ${modelId} 可用的token`);
-          return null;
-        }
+        log.warn(`所有启用 token 对模型 ${modelId} 当前都不可用`);
+        return null;
       }
     }
 

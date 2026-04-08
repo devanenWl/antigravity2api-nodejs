@@ -185,7 +185,6 @@ export async function generateAssistantResponse(requestBody, token, callback) {
   const headers = buildHeaders(token);
   const dumpId = isDebugDumpEnabled() ? createDumpId('stream') : null;
   const streamCollector = dumpId ? createStreamCollector() : null;
-  headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody)));
   let num = Math.floor(Math.random() * QA_PAIRS.length);
   if (dumpId) {
     await dumpFinalRequest(dumpId, requestBody);
@@ -332,7 +331,6 @@ export async function generateAssistantResponseNoStream(requestBody, token) {
   const headers = buildHeaders(token);
   const dumpId = isDebugDumpEnabled() ? createDumpId('no_stream') : null;
   let num = Math.floor(Math.random() * QA_PAIRS.length);
-  headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody)));
 
   if (dumpId) await dumpFinalRequest(dumpId, requestBody);
   let data;
@@ -408,7 +406,6 @@ export async function generateImageForSD(requestBody, token) {
   const messageId = randomUUID();
   const modelName = requestBody.model;
   const headers = buildHeaders(token);
-  headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody), 'utf-8'));
   let num = Math.floor(Math.random() * QA_PAIRS.length);
 
   //console.log(JSON.stringify(requestBody,null,2));
@@ -437,7 +434,6 @@ export async function generateImageForSD(requestBody, token) {
 export async function sendRecordTrajectoryAnalytics(token, num, trajectoryId, executionId, cascadeId, modelName = "claude-opus-4-6-thinking") {
   const trajectorybody = generateTrajectorybody(num, trajectoryId, executionId, cascadeId, modelName, token);
   const headers = buildHeaders(token);
-  headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(trajectorybody)));
   try {
     await requesterManager.fetch(config.api.recordTrajectory, {
       method: 'POST',
@@ -491,7 +487,6 @@ export async function sendLog(token, num, trajectoryId, conversationId, messageI
 export async function sendRecordCodeAssistMetrics(token, trajectoryId) {
   const requestBody = buildRecordCodeAssistMetricsBody(token, trajectoryId);
   const headers = buildHeaders(token);
-  headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody), 'utf-8'));
   try {
     await requesterManager.fetch(config.api.recordCodeAssistMetrics, {
       method: 'POST',
@@ -553,7 +548,6 @@ export async function sendFrontEnd(token) {
 export async function sendCheckPoint(token) {
   const requestBody = generateCheckpointBody(token);
   const headers = buildHeaders(token);
-  headers["Content-Length"] = String(Buffer.byteLength(JSON.stringify(requestBody), 'utf-8'));
   if (checkPointList.has(token.sessionId)) {
     return;
   } else {

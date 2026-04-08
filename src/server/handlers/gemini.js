@@ -6,6 +6,7 @@
 import { generateAssistantResponse, generateAssistantResponseNoStream, getAvailableModels, getModelsWithQuotas } from '../../api/client.js';
 import { generateGeminiRequestBody, prepareImageRequest } from '../../utils/utils.js';
 import { buildGeminiErrorPayload } from '../../utils/errors.js';
+import { createApiError } from '../../utils/errors.js';
 import logger from '../../utils/logger.js';
 import config from '../../config/config.js';
 import tokenManager from '../../auth/token_manager.js';
@@ -13,6 +14,7 @@ import quotaManager from '../../auth/quota_manager.js';
 import { createGeminiResponse } from '../formatters/gemini.js';
 import { validateIncomingChatRequest } from '../validators/chat.js';
 import { getSafeRetries } from './common/retry.js';
+import { ensureFreshTokenQuota } from './common/quota.js';
 import {
   setStreamHeaders,
   createHeartbeat,
@@ -109,13 +111,30 @@ export const handleGeminiRequest = async (req, res, modelName, isStream) => {
       return res.status(validation.status).json(buildGeminiErrorPayload({ message: validation.message }, validation.status));
     }
 
-    const token = await tokenManager.getToken(modelName);
+    let token = await tokenManager.getToken(modelName);
     if (!token) {
-      throw new Error('没有可用的token，请运行 npm run login 获取token');
+      const tokenList = await tokenManager.getTokenList();
+      if (tokenList.length === 0) {
+        throw new Error('没有可用的token，请运行 npm run login 获取token');
+      }
+      throw createApiError(`当前没有对模型 ${modelName} 可用的额度，请稍后重试`, 429);
     }
 
     // 获取 tokenId 用于冷却状态管理
-    const tokenId = await tokenManager.getTokenId(token);
+    let tokenId = await tokenManager.getTokenId(token);
+
+    ({ token, tokenId } = await ensureFreshTokenQuota({
+      tokenManager,
+      getModelsWithQuotas,
+      modelId: modelName,
+      token,
+      tokenId,
+      loggerPrefix: 'gemini.quota '
+    }));
+
+    if (!token) {
+      throw createApiError(`当前没有对模型 ${modelName} 可用的额度，请稍后重试`, 429);
+    }
 
     // 创建刷新额度的回调函数
     const refreshQuota = async () => {

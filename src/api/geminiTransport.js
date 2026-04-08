@@ -1,4 +1,5 @@
 import requesterManager from '../utils/requesterManager.js';
+import config from '../config/config.js';
 
 /**
  * 统一流式 SSE 请求（TLS 指纹 / axios 均通过 requesterManager 路由）
@@ -12,13 +13,46 @@ export async function runSseStream({ url, method = 'POST', headers, body, proces
 
   let errorBody = '';
   let statusCode = null;
+  const streamTimeoutMs = config.timeout || 300000;
 
   await new Promise((resolve, reject) => {
+    let timeoutId = null;
+    let settled = false;
+
+    const clearTimer = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+    };
+
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimer();
+      callback(value);
+    };
+
+    const armTimer = () => {
+      clearTimer();
+      timeoutId = setTimeout(() => {
+        try { processor.close(); } catch {}
+        try { streamResponse.abort?.(); } catch {}
+        settle(reject, {
+          status: 504,
+          message: `Upstream stream timeout after ${streamTimeoutMs}ms`
+        });
+      }, streamTimeoutMs);
+      timeoutId.unref?.();
+    };
+
     streamResponse
       .onStart(({ status }) => {
         statusCode = status;
+        armTimer();
       })
       .onData((chunk) => {
+        armTimer();
         if (statusCode !== 200) {
           errorBody += chunk;
           if (onErrorChunk) onErrorChunk(chunk);
@@ -29,12 +63,12 @@ export async function runSseStream({ url, method = 'POST', headers, body, proces
       .onEnd(() => {
         processor.close();
         if (statusCode !== 200) {
-          reject({ status: statusCode, message: errorBody });
+          settle(reject, { status: statusCode, message: errorBody });
         } else {
-          resolve();
+          settle(resolve);
         }
       })
-      .onError(reject);
+      .onError((error) => settle(reject, error));
   });
 }
 

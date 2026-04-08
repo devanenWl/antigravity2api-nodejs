@@ -204,12 +204,14 @@ class RequesterManager {
   // ==================== axios 路径 ====================
 
   async _axiosFetch(url, { method, headers, body, okStatus }) {
+    const transferEncoding = headers['Transfer-Encoding'] || headers['transfer-encoding'];
     const axiosConfig = buildAxiosRequestConfig({
       method,
       url,
       headers,
       data: body,
       timeout: config.timeout,
+      useChunked: body !== null && /chunked/i.test(String(transferEncoding || '')),
     });
 
     // 对于非 2xx 状态码，axios 默认会抛错；这里统一处理
@@ -233,6 +235,8 @@ class RequesterManager {
    */
   _axiosFetchStream(url, { method, headers, body }) {
     const streamResponse = new AxiosStreamResponse();
+    const transferEncoding = headers['Transfer-Encoding'] || headers['transfer-encoding'];
+    const controller = new AbortController();
 
     const axiosConfig = buildAxiosRequestConfig({
       method,
@@ -240,13 +244,20 @@ class RequesterManager {
       headers,
       data: body,
       timeout: config.timeout,
+      useChunked: body !== null && /chunked/i.test(String(transferEncoding || '')),
     });
+    axiosConfig.signal = controller.signal;
     axiosConfig.responseType = 'stream';
+    streamResponse._abort = () => {
+      try { controller.abort(); } catch { /* ignore */ }
+      try { streamResponse._stream?.destroy(new Error('Request aborted')); } catch { /* ignore */ }
+    };
 
     axios(axiosConfig)
       .then((response) => {
         const status = response.status;
         streamResponse._status = status;
+        streamResponse._stream = response.data;
         if (streamResponse._onStart) {
           streamResponse._onStart({ status, headers: response.headers });
         }
@@ -292,6 +303,8 @@ class AxiosStreamResponse {
     this._onData = null;
     this._onEnd = null;
     this._onError = null;
+    this._abort = null;
+    this._stream = null;
   }
 
   get status() { return this._status; }
@@ -300,6 +313,7 @@ class AxiosStreamResponse {
   onData(callback)  { this._onData  = callback; return this; }
   onEnd(callback)   { this._onEnd   = callback; return this; }
   onError(callback) { this._onError = callback; return this; }
+  abort() { this._abort?.(); }
 }
 
 // ==================== 单例导出 ====================

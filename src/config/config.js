@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import fs from 'fs';
 import crypto from 'crypto';
+import os from 'os';
 import log from '../utils/logger.js';
 import { deepMerge } from '../utils/deepMerge.js';
 import { getConfigPaths } from '../utils/paths.js';
@@ -225,6 +226,35 @@ export function getProxyConfig() {
 }
 
 // 默认 API 配置（Antigravity）
+const DEFAULT_ANTIGRAVITY_VERSION = '1.22.2';
+
+function getAntigravityPlatformSegment() {
+  const platformMap = {
+    win32: 'windows',
+    darwin: 'darwin',
+    linux: 'linux'
+  };
+  const archMap = {
+    x64: 'amd64',
+    arm64: 'arm64'
+  };
+
+  return `${platformMap[os.platform()] || os.platform()}/${archMap[os.arch()] || os.arch()}`;
+}
+
+function buildAntigravityUserAgent(version = DEFAULT_ANTIGRAVITY_VERSION) {
+  return `antigravity/${version} ${getAntigravityPlatformSegment()}`;
+}
+
+const LEGACY_PRODUCTION_API_CONFIG = {
+  url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
+  modelsUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+  noStreamUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent',
+  recordTrajectory: 'https://daily-cloudcode-pa.googleapis.com/v1internal:recordTrajectoryAnalytics',
+  recordCodeAssistMetrics: 'https://daily-cloudcode-pa.googleapis.com/v1internal:recordCodeAssistMetrics',
+  host: 'daily-cloudcode-pa.googleapis.com'
+};
+
 const DEFAULT_API_CONFIGS = {
   sandbox: {
     url: 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse',
@@ -235,12 +265,12 @@ const DEFAULT_API_CONFIGS = {
     host: 'daily-cloudcode-pa.sandbox.googleapis.com'
   },
   production: {
-    url: 'https://daily-cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
-    modelsUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
-    noStreamUrl: 'https://daily-cloudcode-pa.googleapis.com/v1internal:generateContent',
-    recordTrajectory: 'https://daily-cloudcode-pa.googleapis.com/v1internal:recordTrajectoryAnalytics',
-    recordCodeAssistMetrics: "https://daily-cloudcode-pa.googleapis.com/v1internal:recordCodeAssistMetrics",
-    host: 'daily-cloudcode-pa.googleapis.com'
+    url: 'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse',
+    modelsUrl: 'https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels',
+    noStreamUrl: 'https://cloudcode-pa.googleapis.com/v1internal:generateContent',
+    recordTrajectory: 'https://cloudcode-pa.googleapis.com/v1internal:recordTrajectoryAnalytics',
+    recordCodeAssistMetrics: 'https://cloudcode-pa.googleapis.com/v1internal:recordCodeAssistMetrics',
+    host: 'cloudcode-pa.googleapis.com'
   }
 };
 
@@ -268,18 +298,36 @@ function getActiveApiConfig(jsonConfig) {
   const apiUse = jsonConfig.api?.use || 'production';
   const customConfig = jsonConfig.api?.[apiUse];
   const defaultConfig = DEFAULT_API_CONFIGS[apiUse] || DEFAULT_API_CONFIGS.production;
-  const unleash = jsonConfig.api?.unleash || DEFAULT_API_UNLEASH
+  const unleash = jsonConfig.api?.unleash || DEFAULT_API_UNLEASH;
+  const legacyConfig = apiUse === 'production' ? LEGACY_PRODUCTION_API_CONFIG : null;
+
+  const pickApiValue = (key) => {
+    const customValue = customConfig?.[key];
+    if (customValue === undefined || customValue === null || customValue === '') {
+      return defaultConfig[key];
+    }
+    if (legacyConfig && customValue === legacyConfig[key]) {
+      return defaultConfig[key];
+    }
+    return customValue;
+  };
+
+  if (legacyConfig && customConfig && Object.keys(legacyConfig).some((key) => customConfig[key] === legacyConfig[key])) {
+    log.info('检测到旧版 daily-cloudcode-pa 默认配置，已自动切换为 cloudcode-pa.googleapis.com');
+  }
+
+  const ideVersion = jsonConfig.api?.version || DEFAULT_ANTIGRAVITY_VERSION;
 
   return {
     use: apiUse,
-    url: customConfig?.url || defaultConfig.url,
-    modelsUrl: customConfig?.modelsUrl || defaultConfig.modelsUrl,
-    noStreamUrl: customConfig?.noStreamUrl || defaultConfig.noStreamUrl,
-    recordTrajectory: customConfig?.recordTrajectory || defaultConfig.recordTrajectory,
-    recordCodeAssistMetrics: customConfig?.recordCodeAssistMetrics || defaultConfig.recordCodeAssistMetrics,
-    host: customConfig?.host || defaultConfig.host,
-    userAgent: `antigravity/${jsonConfig.api?.version || "1.19.5" } windows/amd64`,
-    ideVersion: jsonConfig.api?.version || "1.19.5",
+    url: pickApiValue('url'),
+    modelsUrl: pickApiValue('modelsUrl'),
+    noStreamUrl: pickApiValue('noStreamUrl'),
+    recordTrajectory: pickApiValue('recordTrajectory'),
+    recordCodeAssistMetrics: pickApiValue('recordCodeAssistMetrics'),
+    host: pickApiValue('host'),
+    userAgent: buildAntigravityUserAgent(ideVersion),
+    ideVersion,
     unleash: unleash
   };
 }
@@ -453,7 +501,7 @@ export async function checkAndUpdateVersion() {
 
       // 更新内存中的配置
       config.api.ideVersion = latestVersion;
-      config.api.userAgent = `antigravity/${latestVersion} windows/amd64`;
+      config.api.userAgent = buildAntigravityUserAgent(latestVersion);
 
       log.info(`✓ 版本已更新为 ${latestVersion}`);
     } else {

@@ -7,6 +7,7 @@ import { generateAssistantResponse, generateAssistantResponseNoStream, getModels
 import { generateClaudeRequestBody, prepareImageRequest } from '../../utils/utils.js';
 import { normalizeClaudeParameters } from '../../utils/parameterNormalizer.js';
 import { buildClaudeErrorPayload } from '../../utils/errors.js';
+import { createApiError } from '../../utils/errors.js';
 import logger from '../../utils/logger.js';
 import config from '../../config/config.js';
 import tokenManager from '../../auth/token_manager.js';
@@ -14,6 +15,7 @@ import quotaManager from '../../auth/quota_manager.js';
 import { createClaudeResponse } from '../formatters/claude.js';
 import { validateIncomingChatRequest } from '../validators/chat.js';
 import { getSafeRetries } from './common/retry.js';
+import { ensureFreshTokenQuota } from './common/quota.js';
 import {
   setStreamHeaders,
   createHeartbeat,
@@ -62,13 +64,30 @@ export const handleClaudeRequest = async (req, res, isStream) => {
       return res.status(400).json(buildClaudeErrorPayload({ message: 'model is required' }, 400));
     }
 
-    const token = await tokenManager.getToken(model);
+    let token = await tokenManager.getToken(model);
     if (!token) {
-      throw new Error('没有可用的token，请运行 npm run login 获取token');
+      const tokenList = await tokenManager.getTokenList();
+      if (tokenList.length === 0) {
+        throw new Error('没有可用的token，请运行 npm run login 获取token');
+      }
+      throw createApiError(`当前没有对模型 ${model} 可用的额度，请稍后重试`, 429);
     }
 
     // 获取 tokenId 用于冷却状态管理
-    const tokenId = await tokenManager.getTokenId(token);
+    let tokenId = await tokenManager.getTokenId(token);
+
+    ({ token, tokenId } = await ensureFreshTokenQuota({
+      tokenManager,
+      getModelsWithQuotas,
+      modelId: model,
+      token,
+      tokenId,
+      loggerPrefix: 'claude.quota '
+    }));
+
+    if (!token) {
+      throw createApiError(`当前没有对模型 ${model} 可用的额度，请稍后重试`, 429);
+    }
 
     // 创建刷新额度的回调函数
     const refreshQuota = async () => {

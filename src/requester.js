@@ -127,6 +127,7 @@ class FingerprintRequester {
       proxy,
       responseType = 'text',
       onDownloadProgress,
+      onProcess,
       validateStatus = (status) => status >= 200 && status < 300,
       signal,
       skipGzipDecompress = false, // 是否跳过 gzip 解压（流式响应应设为 true）
@@ -167,6 +168,9 @@ class FingerprintRequester {
     return new Promise((resolve, reject) => {
       const proc = spawn(this.binaryPath);
       this.activeProcesses.add(proc);
+      if (typeof onProcess === 'function') {
+        onProcess(proc);
+      }
       let headersParsed = false;
       let responseHeaders = {};
       let responseStatus = 200;
@@ -448,6 +452,9 @@ class FingerprintRequester {
 
     const config = {
       ...this._buildConfigFromOptions(url, options, true),
+      onProcess: (proc) => {
+        streamResponse._proc = proc;
+      },
       onDownloadProgress: ({ chunk, status, headers }) => {
         // 首次收到数据时更新 headers
         if (!streamResponse._started) {
@@ -525,6 +532,7 @@ class StreamResponse {
     this._textPromiseResolve = null;
     this._textPromiseReject = null;
     this._finalText = null;
+    this._proc = null;
   }
 
   onStart(callback) {
@@ -545,6 +553,12 @@ class StreamResponse {
   onError(callback) {
     this._onError = callback;
     return this;
+  }
+
+  abort() {
+    if (this._proc && !this._proc.killed) {
+      try { this._proc.kill(); } catch { /* ignore */ }
+    }
   }
 
   async text() {

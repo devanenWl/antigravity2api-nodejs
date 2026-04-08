@@ -85,6 +85,7 @@ export function buildAxiosRequestConfig({
       axiosConfig.data = createChunkedStream(data);
       // 删除 Content-Length 头，强制使用 chunked
       delete axiosConfig.headers['Content-Length'];
+      delete axiosConfig.headers['content-length'];
     } else {
       axiosConfig.data = data;
     }
