@@ -9,6 +9,7 @@ import ProjectIdFetcher from './project_id_fetcher.js';
 import TokenValidator from './token_validator.js';
 import { StrategyFactory, RotationStrategy } from './token_rotation_strategy.js';
 import { TokenError } from '../utils/errors.js';
+import quotaManager from './quota_manager.js';
 import { randomUUID } from 'crypto';
 
 /**
