@@ -1025,15 +1025,11 @@ router.get('/tokens/:tokenId/quotas', cookieAuthMiddleware, async (req, res) => 
       };
     });
 
-    // 获取请求计数
-    const requestCounts = quotaData.requestCounts || {};
-
     res.json({
       success: true,
       data: {
         lastUpdated: quotaData.lastUpdated,
-        models: modelsWithBeijingTime,
-        requestCounts // 返回请求计数供前端计算预估
+        models: modelsWithBeijingTime
       }
     });
   } catch (error) {

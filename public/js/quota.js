@@ -171,7 +171,7 @@ const GROUP_COST_PERCENT = {
     other: 0.6667
 };
 
-function summarizeGroup(items, requestCount = 0, groupKey = null) {
+function summarizeGroup(items, groupKey = null) {
     if (!items || items.length === 0) {
         return { percentage: 0, percentageText: '--', resetTime: '--', estimatedRequests: 0 };
     }
@@ -249,7 +249,6 @@ async function loadTokenQuotaSummary(tokenId) {
 
 function renderQuotaSummary(summaryEl, quotaData) {
     const models = quotaData.models;
-    const requestCounts = quotaData.requestCounts || {};
     const modelEntries = Object.entries(models || {});
 
     if (modelEntries.length === 0) {
@@ -262,7 +261,7 @@ function renderQuotaSummary(summaryEl, quotaData) {
 
     const rowsHtml = QUOTA_SUMMARY_KEYS.map((groupKey) => {
         const group = groupByKey[groupKey];
-        const summary = summarizeGroup(grouped[groupKey], requestCounts[groupKey] || 0, groupKey);
+        const summary = summarizeGroup(grouped[groupKey], groupKey);
         const barColor = summary.percentageText === '--' ? '#9ca3af' : getBarColor(summary.percentage);
         const safeResetTime = escapeHtml(summary.resetTime);
         const resetText = safeResetTime === '--' ? '--' : `重置: ${safeResetTime}`;
@@ -621,7 +620,6 @@ async function refreshAllQuotas() {
 
 function renderQuotaModal(quotaContent, quotaData) {
     const models = quotaData.models;
-    const requestCounts = quotaData.requestCounts || {};
 
     const updateTimeEl = document.getElementById('quotaUpdateTime');
     if (updateTimeEl && quotaData.lastUpdated) {
@@ -641,7 +639,7 @@ function renderQuotaModal(quotaContent, quotaData) {
     let html = '';
 
     const renderGroup = (items, group, groupKey) => {
-        const summary = summarizeGroup(items, requestCounts[groupKey] || 0, groupKey);
+        const summary = summarizeGroup(items, groupKey);
         const safeLabel = escapeHtml(group.label);
         const safeResetTime = escapeHtml(summary.resetTime);
         const estimatedText = summary.estimatedRequests > 0 ? ` · 约${summary.estimatedRequests}次` : '';
