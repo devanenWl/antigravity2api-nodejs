@@ -200,10 +200,10 @@ function summarizeGroup(items, requestCount = 0, groupKey = null) {
 
     // 根据模型系列使用不同的消耗率
     const costPercent = (groupKey && GROUP_COST_PERCENT[groupKey]) || 0.6667;
-    // 基于当前阈值计算总的可用次数，然后减去已记录的请求次数
+    // remaining is already the current remaining quota, so do not subtract
+    // historical requestCount again here.
     const percentageValue = toPercentage(minRemaining);
-    const totalFromThreshold = Math.floor(percentageValue / costPercent);
-    const estimatedRequests = Math.max(0, totalFromThreshold - requestCount);
+    const estimatedRequests = Math.max(0, Math.floor(percentageValue / costPercent));
 
     return {
         percentage: percentageValue,

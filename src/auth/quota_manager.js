@@ -362,18 +362,17 @@ class QuotaManager {
   /**
    * 计算预估剩余请求次数
    * @param {number} remainingFraction - 剩余额度比例 (0-1)
-   * @param {number} requestCount - 已使用的请求次数
+   * @param {number} requestCount - Retained for backward compatibility
    * @param {string} [groupKey] - 模型系列 key（用于获取对应的消耗率）
    * @returns {number} 预估剩余请求次数
    */
   calculateEstimatedRequests(remainingFraction, requestCount = 0, groupKey = null) {
     // 根据模型系列使用不同的消耗率
     const costPercent = (groupKey && GROUP_COST_PERCENT[groupKey]) || REQUEST_COST_PERCENT;
-    // 基于当前阈值计算总的可用次数
+    // remainingFraction is already the current remaining quota, so subtracting
+    // historical requestCount here would double-count usage.
     const percentageValue = remainingFraction * 100;
-    const totalFromThreshold = Math.floor(percentageValue / costPercent);
-    // 减去已记录的请求次数
-    return Math.max(0, totalFromThreshold - requestCount);
+    return Math.max(0, Math.floor(percentageValue / costPercent));
   }
 
   /**
