@@ -94,13 +94,14 @@ class RequesterManager {
    * 热重载：重置请求器，下次请求时按最新 config 重新初始化
    */
   reload() {
-    if (this._tlsRequester) {
-      try { this._tlsRequester.close(); } catch { /* ignore */ }
-    }
+    // 不主动关闭当前 TLS requester。
+    // 旧 requester 可能仍有进行中的请求，强行 close 会杀掉子进程，
+    // 导致调用方收到 “Process exited with code null”。
+    // 这里仅清空管理器引用，让后续新请求按新配置初始化新 requester。
     this._tlsRequester = null;
     this._tlsInitFailed = false;
     this._initPromise = null;
-    logger.info('[RequesterManager] 请求器已重置，将在下次请求时按新配置重新初始化');
+    logger.info('[RequesterManager] 请求器已重置，新请求将按新配置重新初始化，进行中的请求会继续使用旧 requester');
   }
 
   /**
