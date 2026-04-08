@@ -81,7 +81,6 @@ export const handleOpenAIRequest = async (req, res) => {
     // 创建 with429Retry 选项
     const createRetryOptions = (prefix) => ({
       loggerPrefix: prefix,
-      onAttempt: () => tokenManager.recordRequest(token, model),
       tokenId,
       modelId: model,
       refreshQuota,

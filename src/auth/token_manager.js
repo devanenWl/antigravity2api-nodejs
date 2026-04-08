@@ -9,7 +9,6 @@ import ProjectIdFetcher from './project_id_fetcher.js';
 import TokenValidator from './token_validator.js';
 import { StrategyFactory, RotationStrategy } from './token_rotation_strategy.js';
 import { TokenError } from '../utils/errors.js';
-import quotaManager from './quota_manager.js';
 import { randomUUID } from 'crypto';
 
 /**
@@ -470,23 +469,6 @@ class TokenManager {
       requestCount: this.requestCountPerToken,
       currentIndex: typeof this.strategy?.currentIndex === 'number' ? this.strategy.currentIndex : null
     };
-  }
-
-  /**
-   * 记录请求（用于配额管理）
-   * @param {Object} token - Token 对象
-   * @param {string} modelId - 模型 ID
-   */
-  async recordRequest(token, modelId) {
-    if (!token || !modelId) return;
-
-    try {
-      const tokenId = await this.pool.generateTokenId(token);
-      quotaManager.recordRequest(tokenId, modelId);
-    } catch (error) {
-      // 记录失败不影响请求
-      log.warn('记录请求次数失败:', error.message);
-    }
   }
 
   /**

@@ -99,7 +99,6 @@ export const handleClaudeRequest = async (req, res, isStream) => {
     // 创建 with429Retry 选项
     const createRetryOptions = (prefix) => ({
       loggerPrefix: prefix,
-      onAttempt: () => tokenManager.recordRequest(token, model),
       tokenId,
       modelId: model,
       refreshQuota,
