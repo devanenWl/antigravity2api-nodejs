@@ -467,7 +467,8 @@ class TokenManager {
   getRotationConfig() {
     return {
       strategy: this.rotationStrategyName,
-      requestCount: this.requestCountPerToken
+      requestCount: this.requestCountPerToken,
+      currentIndex: typeof this.strategy?.currentIndex === 'number' ? this.strategy.currentIndex : null
     };
   }
 
